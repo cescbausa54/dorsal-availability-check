@@ -1,12 +1,16 @@
 name: Vigila dorsals
 
+# Cada execució vigila ~50 minuts i en acabar engega la següent (cadena contínua).
+# El cron només fa de xarxa de seguretat per si la cadena es trenca.
+# Per aturar-ho del tot: Actions → Vigila dorsals → "..." → Disable workflow.
 on:
   schedule:
-    - cron: "*/10 * * * *"   # GitHub pot endarrerir-ho uns minuts
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
+  actions: write   # per poder engegar la següent execució
 
 concurrency:
   group: monitor
@@ -15,7 +19,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +33,7 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
-      - name: Comprova la pàgina (bucle de ~9 minuts)
+      - name: Comprova la pàgina (bucle de ~50 minuts)
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -39,7 +43,7 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           PYTHONUNBUFFERED: "1"   # mostra el log en directe
           CHECK_INTERVAL: "60"
-          LOOP_MINUTES: "9"
+          LOOP_MINUTES: "50"
         run: python monitor.py --loop
 
       - name: Desa l'estat si ha canviat
@@ -51,3 +55,10 @@ jobs:
             git commit -m "Actualitza estat"
             git pull --rebase && git push
           fi
+
+      # No s'executa si cancel·les l'execució a mà, així pots aturar la cadena.
+      - name: Engega la següent execució
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run monitor.yml --ref main --repo ${{ github.repository }}

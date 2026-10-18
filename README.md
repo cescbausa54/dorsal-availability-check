@@ -8,8 +8,9 @@ i t'envia un correu electrònic quan apareix algun dorsal disponible, amb l'enll
 
 ## Com funciona
 
-- Un GitHub Action s'executa cada 10 minuts i, dins de cada execució, comprova la pàgina **cada 60 s**
-  durant 9 minuts (cobertura gairebé contínua).
+- Un GitHub Action comprova la pàgina **cada 60 s** durant ~50 minuts i, en acabar, engega
+  automàticament la següent execució (cobertura contínua). Un cron cada 30 minuts la torna a
+  engegar si la cadena es trenca. Per aturar-ho: Actions → Vigila dorsals → "..." → Disable workflow.
 - Carrega la pàgina amb un navegador real (Playwright/Chromium) i mira la taula del MarketPlace
   (columnes Ref. / Tarifa / Importe / Requiere validación):
   - taula buida → `estat=none`, no fa res.
@@ -54,4 +55,4 @@ SMTP_USER=... SMTP_PASSWORD=... LOOP_MINUTES=0 CHECK_INTERVAL=30 python monitor.
 - Cada dilluns rebràs un correu **"El monitor de dorsals segueix actiu"**. A més, aquest workflow fa
   un petit commit setmanal perquè GitHub no desactivi els workflows per 60 dies d'inactivitat.
   Si un dilluns no arriba el correu, revisa la pestanya Actions.
-- El cron de GitHub pot endarrerir-se uns minuts en hores punta.
+- El cron de GitHub pot endarrerir-se molt (o trigar a començar en repos nous); per això les execucions s'encadenen soles.
