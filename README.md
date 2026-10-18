@@ -1,7 +1,7 @@
 # Monitor de dorsals – Mitja Marató de Barcelona 2027
 
 Vigila cada minut la [pàgina de transferència de dorsals](https://inscripciones.rpmsports.es/es/evento/hyundai-mitja-marato-barcelona-by-brooks-2027/transfer-registration)
-i t'envia una notificació push al mòbil quan apareix algun dorsal disponible, amb l'enllaç per comprar-lo.
+i t'envia un missatge de Telegram quan apareix algun dorsal disponible, amb l'enllaç per comprar-lo.
 
 > **No compra automàticament.** La compra demana les teves dades i pagament, i els dorsals
 > transferits solen volar en minuts: l'avís t'arriba amb l'enllaç directe perquè el compris tu.
@@ -19,15 +19,19 @@ i t'envia una notificació push al mòbil quan apareix algun dorsal disponible, 
 
 ## Configuració (5 minuts)
 
-1. **Notificacions al mòbil amb ntfy** (el més fàcil):
-   - Instal·la l'app [ntfy](https://ntfy.sh) (Android/iOS).
-   - Subscriu-te a un tema amb un nom difícil d'endevinar, p. ex. `dorsals-mitja-x7k29q`.
+1. **Crea un bot de Telegram:**
+   - A Telegram, obre [@BotFather](https://t.me/BotFather) i envia `/newbot`. Tria un nom i un usuari acabat en `bot`.
+   - Et donarà un **token** (tipus `123456789:AAH...`). Guarda'l.
+   - Obre el teu bot nou i envia-li qualsevol missatge (p. ex. `hola`).
+   - Al navegador, obre `https://api.telegram.org/bot<TOKEN>/getUpdates` (substituint `<TOKEN>`)
+     i busca `"chat":{"id":123456789` → aquest número és el teu **chat_id**.
 2. Al repo de GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
-   - `NTFY_TOPIC` = el nom del tema.
-   - (Opcional) `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` si prefereixes Telegram.
+   - `TELEGRAM_BOT_TOKEN` = el token.
+   - `TELEGRAM_CHAT_ID` = el chat_id.
+   - (Opcional) `NTFY_TOPIC` si també vols avisos per [ntfy](https://ntfy.sh).
 3. **Actions → Vigila dorsals → Run workflow** per provar-ho. Al log veuràs `estat=...`.
 
-Per provar que la notificació arriba: `NTFY_TOPIC=el-teu-tema python -c "import monitor; monitor.notify('Prova', 'Funciona!')"`.
+Per provar que la notificació arriba: `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... python -c "import monitor; monitor.notify('Prova', 'Funciona!')"`.
 
 ## Ajustar la detecció
 
@@ -40,7 +44,7 @@ sense accents). Si quan n'hi ha surt un altre text, afegeix-lo a `STOCK_PATTERNS
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
-NTFY_TOPIC=el-teu-tema LOOP_MINUTES=0 CHECK_INTERVAL=30 python monitor.py --loop
+TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... LOOP_MINUTES=0 CHECK_INTERVAL=30 python monitor.py --loop
 ```
 
 ## Notes
