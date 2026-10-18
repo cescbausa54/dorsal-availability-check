@@ -11,6 +11,10 @@ Variables d'entorn:
     NTFY_TOPIC          tema de https://ntfy.sh per rebre notificacions push al mòbil
     TELEGRAM_BOT_TOKEN  token d'un bot de Telegram (opcional)
     TELEGRAM_CHAT_ID    xat on el bot enviarà els avisos (opcional)
+    SMTP_USER           compte de correu que envia l'avís (p. ex. el teu Gmail) (opcional)
+    SMTP_PASSWORD       contrasenya d'aplicació d'aquest compte (opcional)
+    EMAIL_TO            adreça on rebre l'avís (per defecte la mateixa SMTP_USER)
+    SMTP_HOST/SMTP_PORT servidor SMTP (per defecte smtp.gmail.com:465)
     NOTIFY_ON_CHANGE    "1" per avisar també quan la pàgina canvia però no es detecten dorsals
 """
 
@@ -21,12 +25,14 @@ import hashlib
 import json
 import os
 import re
+import smtplib
 import sys
 import time
 import unicodedata
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
 DEFAULT_URL = (
@@ -118,36 +124,66 @@ def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n")
 
 
-def notify(title: str, message: str) -> None:
-    sent = False
+def send_ntfy(title: str, message: str) -> bool:
     topic = os.environ.get("NTFY_TOPIC")
-    if topic:
-        req = urllib.request.Request(
-            f"https://ntfy.sh/{urllib.parse.quote(topic)}",
-            data=message.encode(),
-            headers={
-                "Title": title.encode("ascii", "ignore").decode(),
-                "Priority": "urgent",
-                "Tags": "runner,rotating_light",
-                "Click": URL,
-            },
-        )
-        urllib.request.urlopen(req, timeout=20).read()
-        sent = True
+    if not topic:
+        return False
+    req = urllib.request.Request(
+        f"https://ntfy.sh/{urllib.parse.quote(topic)}",
+        data=message.encode(),
+        headers={
+            "Title": title.encode("ascii", "ignore").decode(),
+            "Priority": "urgent",
+            "Tags": "runner,rotating_light",
+            "Click": URL,
+        },
+    )
+    urllib.request.urlopen(req, timeout=20).read()
+    return True
 
+
+def send_telegram(title: str, message: str) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        data = urllib.parse.urlencode(
-            {"chat_id": chat_id, "text": f"{title}\n\n{message}"}
-        ).encode()
-        urllib.request.urlopen(
-            f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=20
-        ).read()
-        sent = True
+    if not (token and chat_id):
+        return False
+    data = urllib.parse.urlencode(
+        {"chat_id": chat_id, "text": f"{title}\n\n{message}"}
+    ).encode()
+    urllib.request.urlopen(
+        f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=20
+    ).read()
+    return True
+
+
+def send_email(title: str, message: str) -> bool:
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+    if not (smtp_user and smtp_password):
+        return False
+    email = EmailMessage()
+    email["Subject"] = title
+    email["From"] = smtp_user
+    email["To"] = os.environ.get("EMAIL_TO") or smtp_user
+    email.set_content(message)
+    host = os.environ.get("SMTP_HOST") or "smtp.gmail.com"
+    port = int(os.environ.get("SMTP_PORT") or "465")
+    with smtplib.SMTP_SSL(host, port, timeout=30) as smtp:
+        smtp.login(smtp_user, smtp_password)
+        smtp.send_message(email)
+    return True
+
+
+def notify(title: str, message: str) -> None:
+    sent = False
+    for sender in (send_telegram, send_email, send_ntfy):
+        try:
+            sent = sender(title, message) or sent
+        except Exception as exc:  # un canal caigut no ha d'impedir els altres
+            print(f"error enviant per {sender.__name__}: {exc}")
 
     if not sent:
-        print("(cap canal de notificació configurat: defineix NTFY_TOPIC o TELEGRAM_*)")
+        print("(cap canal de notificació configurat: defineix TELEGRAM_*, SMTP_* o NTFY_TOPIC)")
     print(f"AVÍS: {title} — {message}")
 
 

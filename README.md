@@ -29,6 +29,13 @@ i t'envia un missatge de Telegram quan apareix algun dorsal disponible, amb l'en
    - `TELEGRAM_BOT_TOKEN` = el token.
    - `TELEGRAM_CHAT_ID` = el chat_id.
    - (Opcional) `NTFY_TOPIC` si també vols avisos per [ntfy](https://ntfy.sh).
+   - (Opcional) **Correu electrònic** amb Gmail:
+     - Activa la verificació en dos passos al teu compte de Google i crea una
+       [contrasenya d'aplicació](https://myaccount.google.com/apppasswords) (16 lletres).
+     - `SMTP_USER` = el teu Gmail, `SMTP_PASSWORD` = la contrasenya d'aplicació
+       (no la teva contrasenya normal).
+     - `EMAIL_TO` (opcional) = adreça on vols rebre l'avís; per defecte, el mateix Gmail.
+     - Amb un altre proveïdor, afegeix també `SMTP_HOST` i `SMTP_PORT` (SSL) al workflow.
 3. **Actions → Vigila dorsals → Run workflow** per provar-ho. Al log veuràs `estat=...`.
 
 Per provar que la notificació arriba: `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... python -c "import monitor; monitor.notify('Prova', 'Funciona!')"`.
