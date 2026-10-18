@@ -10,12 +10,12 @@ i t'envia un correu electrònic quan apareix algun dorsal disponible, amb l'enll
 
 - Un GitHub Action s'executa cada 10 minuts i, dins de cada execució, comprova la pàgina **cada 60 s**
   durant 9 minuts (cobertura gairebé contínua).
-- Carrega la pàgina amb un navegador real (Playwright/Chromium) i en classifica el text:
-  - `none` – hi ha un missatge tipus "no hay dorsales disponibles" → no fa res.
-  - `available` – apareixen botons/textos tipus "Comprar", "Añadir al carrito"... → **t'avisa**.
-  - `unknown` – text que no reconeix → t'avisa cada vegada que la pàgina canvia, per si de cas.
-  - `error` – bloqueig o error del servidor → no avisa (evita falses alarmes).
-- L'últim estat es desa a `state/state.json` per no repetir avisos.
+- Carrega la pàgina amb un navegador real (Playwright/Chromium) i mira la taula del MarketPlace
+  (columnes Ref. / Tarifa / Importe / Requiere validación):
+  - taula buida → `estat=none`, no fa res.
+  - alguna fila → `estat=available`, **t'avisa** amb les dades del dorsal (només una vegada per dorsal).
+  - no troba la taula (bloqueig, error o la web ha canviat) → `estat=error`, no avisa.
+- Els dorsals ja avisats es desen a `state/state.json` per no repetir avisos.
 
 ## Configuració (5 minuts)
 
@@ -33,11 +33,10 @@ i t'envia un correu electrònic quan apareix algun dorsal disponible, amb l'enll
 
 Per provar que la notificació arriba: `SMTP_USER=... SMTP_PASSWORD=... python -c "import monitor; monitor.notify('Prova', 'Funciona!')"`.
 
-## Ajustar la detecció
+## Si la detecció falla
 
-La primera vegada mira el log de l'Action. Si surt `estat=unknown` quan no hi ha dorsals, afegeix
-el missatge exacte que mostra la web a `NO_STOCK_PATTERNS` dins de `monitor.py` (en minúscules i
-sense accents). Si quan n'hi ha surt un altre text, afegeix-lo a `STOCK_PATTERNS`.
+Si el log mostra `estat=error (no hi ha la taula)` de manera continuada, segurament la web ha
+canviat de format: cal ajustar `EXTRACT_ROWS_JS` a `monitor.py`.
 
 ## Executar-ho en local
 

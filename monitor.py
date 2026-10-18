@@ -1,5 +1,8 @@
 """Vigila la pàgina de transferència de dorsals i avisa quan n'hi ha de disponibles.
 
+La pàgina (MarketPlace) mostra una taula amb columnes Ref. / Tarifa / Importe /
+Requiere validación. Quan no hi ha dorsals la taula és buida; cada fila és un dorsal a la venda.
+
 Ús:
     python monitor.py            # una sola comprovació
     python monitor.py --loop     # comprova cada CHECK_INTERVAL segons durant LOOP_MINUTES minuts
@@ -8,20 +11,18 @@ Variables d'entorn:
     TARGET_URL          URL a vigilar (per defecte la de la Mitja 2027)
     CHECK_INTERVAL      segons entre comprovacions en mode --loop (per defecte 60)
     LOOP_MINUTES        minuts que dura el mode --loop (per defecte 9; 0 = infinit)
-    NTFY_TOPIC          tema de https://ntfy.sh per rebre notificacions push al mòbil
-    TELEGRAM_BOT_TOKEN  token d'un bot de Telegram (opcional)
-    TELEGRAM_CHAT_ID    xat on el bot enviarà els avisos (opcional)
-    SMTP_USER           compte de correu que envia l'avís (p. ex. el teu Gmail) (opcional)
-    SMTP_PASSWORD       contrasenya d'aplicació d'aquest compte (opcional)
+    SMTP_USER           compte de correu que envia l'avís (p. ex. el teu Gmail)
+    SMTP_PASSWORD       contrasenya d'aplicació d'aquest compte
     EMAIL_TO            adreça on rebre l'avís (per defecte la mateixa SMTP_USER)
     SMTP_HOST/SMTP_PORT servidor SMTP (per defecte smtp.gmail.com:465)
-    NOTIFY_ON_CHANGE    "1" per avisar també quan la pàgina canvia però no es detecten dorsals
+    TELEGRAM_BOT_TOKEN  token d'un bot de Telegram (opcional)
+    TELEGRAM_CHAT_ID    xat on el bot enviarà els avisos (opcional)
+    NTFY_TOPIC          tema de https://ntfy.sh (opcional)
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -42,27 +43,6 @@ DEFAULT_URL = (
 URL = os.environ.get("TARGET_URL") or DEFAULT_URL
 STATE_FILE = Path(__file__).parent / "state" / "state.json"
 
-# Textos que indiquen que NO hi ha dorsals (es comparen sense accents i en minúscules).
-NO_STOCK_PATTERNS = [
-    r"no hay (ningun |ninguna )?(dorsal|dorsales|inscripcion|inscripciones|plazas)[^.]{0,40}disponible",
-    r"no (hay|existen|se han encontrado) (dorsales|inscripciones|transferencias|resultados)",
-    r"no hi ha (cap )?(dorsal|dorsals|inscripcio|inscripcions|places)",
-    r"there are no (bibs|registrations|transfers)",
-    r"no (bibs|registrations) (are )?available",
-    r"agotad[oa]s?",
-    r"sold out",
-]
-
-# Textos que indiquen que SÍ que hi ha dorsals a la venda.
-STOCK_PATTERNS = [
-    r"\bcomprar\b",
-    r"\badquirir\b",
-    r"anadir al carrito",
-    r"dorsales? disponibles?:? *[1-9]",
-    r"\bbuy\b",
-    r"add to cart",
-]
-
 # Textos que indiquen que la pàgina no s'ha carregat bé (bloqueig, error, etc.).
 ERROR_PATTERNS = [
     r"just a moment",
@@ -72,6 +52,22 @@ ERROR_PATTERNS = [
     r"service unavailable",
 ]
 
+# Files "buides" que algunes taules mostren quan no hi ha dades.
+EMPTY_ROW_PATTERNS = [
+    r"no hay (datos|registros|resultados|dorsales)",
+    r"ningun (dato|registro|resultado)",
+    r"no (data|records)",
+]
+
+# Retorna, per a cada taula que tingui una columna "Importe", les files del cos amb les cel·les.
+EXTRACT_ROWS_JS = """
+() => [...document.querySelectorAll('table')]
+  .filter(t => /importe/i.test(t.innerText))
+  .map(t => [...t.querySelectorAll('tr')]
+    .filter(tr => tr.querySelector('td'))
+    .map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim())))
+"""
+
 
 def normalize(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
@@ -79,8 +75,8 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).lower().strip()
 
 
-def fetch_page_text(url: str) -> str:
-    """Carrega la pàgina amb un navegador real (per si el contingut es genera amb JavaScript)."""
+def fetch_page(url: str) -> tuple[str, list[list[list[str]]]]:
+    """Carrega la pàgina amb un navegador real i retorna (text, taules amb les seves files)."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -95,21 +91,28 @@ def fetch_page_text(url: str) -> str:
             )
             page.goto(url, wait_until="networkidle", timeout=60_000)
             page.wait_for_timeout(2_000)
-            return page.inner_text("body")
+            return page.inner_text("body"), page.evaluate(EXTRACT_ROWS_JS)
         finally:
             browser.close()
 
 
-def classify(text: str) -> str:
-    """Retorna 'available', 'none', 'error' o 'unknown'."""
-    t = normalize(text)
-    if len(t) < 50 or any(re.search(p, t) for p in ERROR_PATTERNS):
-        return "error"
-    if any(re.search(p, t) for p in NO_STOCK_PATTERNS):
-        return "none"
-    if any(re.search(p, t) for p in STOCK_PATTERNS):
-        return "available"
-    return "unknown"
+def find_bibs(text: str, tables: list[list[list[str]]]) -> tuple[str, list[str]]:
+    """Retorna (estat, dorsals). Estat: 'available', 'none' o 'error'."""
+    if not tables:
+        # Sense la taula no podem saber res: o la web ha fallat o ha canviat de format.
+        t = normalize(text)
+        reason = "bloqueig/error" if any(re.search(p, t) for p in ERROR_PATTERNS) else "no hi ha la taula"
+        print(f"  ({reason})")
+        return "error", []
+
+    bibs = []
+    for rows in tables:
+        for cells in rows:
+            line = " | ".join(c for c in cells if c)
+            if not line or any(re.search(p, normalize(line)) for p in EMPTY_ROW_PATTERNS):
+                continue
+            bibs.append(line)
+    return ("available" if bibs else "none"), bibs
 
 
 def load_state() -> dict:
@@ -190,31 +193,27 @@ def notify(title: str, message: str) -> None:
 def check_once() -> str:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
-        text = fetch_page_text(URL)
+        text, tables = fetch_page(URL)
     except Exception as exc:  # xarxa, timeout...
         print(f"[{now}] error carregant la pàgina: {exc}")
         return "error"
 
-    status = classify(text)
-    digest = hashlib.sha256(normalize(text).encode()).hexdigest()
-    state = load_state()
-    print(f"[{now}] estat={status} hash={digest[:12]}")
-
+    status, bibs = find_bibs(text, tables)
+    print(f"[{now}] estat={status} dorsals={len(bibs)}")
     if status == "error":
         return status
 
-    changed = digest != state.get("hash")
-    if status == "available" and (state.get("status") != "available" or changed):
-        snippet = normalize(text)[:300]
-        notify("Dorsals disponibles a la Mitja!", f"Corre a comprar-lo: {URL}\n\n{snippet}")
-    elif status == "unknown" and changed:
-        # No reconeixem el text: millor avisar per si de cas.
-        notify("La pàgina de dorsals ha canviat", f"Revisa-la manualment: {URL}")
-    elif changed and state.get("hash") and os.environ.get("NOTIFY_ON_CHANGE") == "1":
-        notify("La pàgina de dorsals ha canviat", f"Estat: {status}. {URL}")
+    state = load_state()
+    new_bibs = [b for b in bibs if b not in state.get("bibs", [])]
+    if new_bibs:
+        listing = "\n".join(f"- {b}" for b in new_bibs)
+        notify(
+            "Dorsals disponibles a la Mitja!",
+            f"Hi ha {len(new_bibs)} dorsal(s) nou(s) a la venda:\n{listing}\n\nCorre a comprar-lo: {URL}",
+        )
 
-    if changed or status != state.get("status"):
-        save_state({"status": status, "hash": digest, "updated": now})
+    if status != state.get("status") or bibs != state.get("bibs", []):
+        save_state({"status": status, "bibs": bibs, "updated": now})
     return status
 
 
