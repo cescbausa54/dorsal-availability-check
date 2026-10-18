@@ -37,6 +37,7 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          PYTHONUNBUFFERED: "1"   # mostra el log en directe
           CHECK_INTERVAL: "60"
           LOOP_MINUTES: "9"
         run: python monitor.py --loop
