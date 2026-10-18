@@ -1,0 +1,41 @@
+name: Correu setmanal de vida
+
+# Cada dilluns envia un correu confirmant que el monitor funciona i fa un commit
+# perquè GitHub no desactivi els workflows programats per inactivitat (60 dies).
+on:
+  schedule:
+    - cron: "13 7 * * 1"   # dilluns ~9:13 (hora d'estiu) / ~8:13 (hivern) a Barcelona
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Envia el correu
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python monitor.py --heartbeat
+
+      - name: Manté el repo actiu
+        run: |
+          date -u +%Y-%m-%dT%H:%M:%SZ > state/heartbeat.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/heartbeat.txt
+          git commit -m "Batec setmanal"
+          git pull --rebase && git push

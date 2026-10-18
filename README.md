@@ -51,6 +51,7 @@ SMTP_USER=... SMTP_PASSWORD=... LOOP_MINUTES=0 CHECK_INTERVAL=30 python monitor.
 - El repo ha de ser **públic** perquè els minuts d'Actions siguin gratuïts il·limitats
   (en un repo privat, aquest ritme supera la quota gratuïta de 2.000 min/mes). No conté cap dada personal:
   els tokens van als *secrets*.
-- GitHub desactiva els workflows programats si el repo no té activitat en 60 dies; si passa,
-  reactiva'l des de la pestanya Actions.
+- Cada dilluns rebràs un correu **"El monitor de dorsals segueix actiu"**. A més, aquest workflow fa
+  un petit commit setmanal perquè GitHub no desactivi els workflows per 60 dies d'inactivitat.
+  Si un dilluns no arriba el correu, revisa la pestanya Actions.
 - El cron de GitHub pot endarrerir-se uns minuts en hores punta.

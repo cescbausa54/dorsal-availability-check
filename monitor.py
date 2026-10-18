@@ -6,6 +6,7 @@ Requiere validación. Quan no hi ha dorsals la taula és buida; cada fila és un
 Ús:
     python monitor.py            # una sola comprovació
     python monitor.py --loop     # comprova cada CHECK_INTERVAL segons durant LOOP_MINUTES minuts
+    python monitor.py --heartbeat  # envia un correu confirmant que el monitor segueix actiu
 
 Variables d'entorn:
     TARGET_URL          URL a vigilar (per defecte la de la Mitja 2027)
@@ -217,10 +218,26 @@ def check_once() -> str:
     return status
 
 
+def heartbeat() -> None:
+    state = load_state()
+    bibs = state.get("bibs", [])
+    notify(
+        "El monitor de dorsals segueix actiu",
+        f"Tot en marxa. Dorsals a la venda ara mateix: {len(bibs)}.\n"
+        f"Últim canvi detectat: {state.get('updated', 'cap encara')}.\n\n"
+        f"Si deixes de rebre aquest correu cada dilluns, revisa la pestanya Actions del repo.\n{URL}",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--heartbeat", action="store_true")
     args = parser.parse_args()
+
+    if args.heartbeat:
+        heartbeat()
+        return 0
 
     if not args.loop:
         return 0 if check_once() != "error" else 1
